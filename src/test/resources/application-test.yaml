@@ -8,3 +8,10 @@ spring:
     properties:
       hibernate:
         format_sql: true
+
+app:
+  data:
+    csv:
+      path: classpath:movielist.csv
+      delimiter: ;
+      quote-char: '"'

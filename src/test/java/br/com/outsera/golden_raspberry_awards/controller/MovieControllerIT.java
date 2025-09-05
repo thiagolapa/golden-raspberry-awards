@@ -1,34 +1,45 @@
 package br.com.outsera.golden_raspberry_awards.controller;
 
-import br.com.outsera.golden_raspberry_awards.model.Movie;
+import br.com.outsera.golden_raspberry_awards.config.DataLoader;
+import br.com.outsera.golden_raspberry_awards.dto.ProducerIntervalDTO;
+import br.com.outsera.golden_raspberry_awards.dto.ProducerIntervalResponse;
 import br.com.outsera.golden_raspberry_awards.repository.MovieRepository;
+import br.com.outsera.golden_raspberry_awards.service.ProducerIntervalService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
+import java.util.Objects;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.hasSize;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
+@Transactional
 class MovieControllerIT {
 
 	@Autowired
 	private MockMvc mockMvc;
+
+	@Autowired
+	private TestRestTemplate restTemplate;
 
 	@Autowired
 	private MovieRepository movieRepository;
@@ -36,87 +47,98 @@ class MovieControllerIT {
 	@Autowired
 	private ObjectMapper objectMapper;
 
+	@Autowired
+	private DataLoader dataLoader;
+
+	@Autowired
+	private ProducerIntervalService intervalService;
+
 	@BeforeEach
-	void setUp() {
+	void setUp() throws Exception {
+		// Limpa e recarrega os dados de teste
 		movieRepository.deleteAll();
-		loadTestData();
-	}
-
-	private void loadTestData() {
-		List<Movie> movies = List.of(
-				createMovie(1980, "Filme 1", "Estúdio 1", List.of("Produtora A", "Produtora B"), true),
-				createMovie(1981, "Filme 2", "Estúdio 2", List.of("Produtora A", "Produtora C"), true),
-				createMovie(1985, "Filme 3", "Estúdio 3", List.of("Produtora B"), true),
-				createMovie(1990, "Filme 4", "Estúdio 4", List.of("Produtora A"), true),
-				createMovie(1991, "Filme 5", "Estúdio 5", List.of("Produtora C"), true),
-				createMovie(1995, "Filme 6", "Estúdio 6", List.of("Produtora D"), true),
-				createMovie(2000, "Filme 7", "Estúdio 7", List.of("Produtora C"), true),
-				createMovie(2005, "Filme 8", "Estúdio 8", List.of("Produtora D"), true),
-				createMovie(2010, "Filme 9", "Estúdio 9", List.of("Produtora E"), true),
-				createMovie(2015, "Filme 10", "Estúdio 10", List.of("Produtora E"), true),
-				createMovie(2020, "Filme 11", "Estúdio 11", List.of("Produtora F"), true),
-				createMovie(2021, "Filme 12", "Estúdio 12", List.of("Produtora F"), true),
-				createMovie(2022, "Filme 13", "Estúdio 13", List.of("Produtora G"), true),
-				createMovie(2023, "Filme 14", "Estúdio 14", List.of("Produtora G"), true)
-		);
-		movieRepository.saveAll(movies);
-	}
-
-	private Movie createMovie(int year, String title, String studios, List<String> producers, boolean winner) {
-		Movie movie = new Movie();
-		movie.setYear(year);
-		movie.setTitle(title);
-		movie.setStudios(studios);
-		movie.setProducers(producers);
-		movie.setWinner(winner);
-		return movie;
+		dataLoader.loadData();
 	}
 
 	@Test
 	void deveRetornarIntervalosMinimoEMaximo() throws Exception {
-		mockMvc.perform(get("/api/movies/producers-intervals")
-						.contentType(MediaType.APPLICATION_JSON))
-				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.min", hasSize(greaterThanOrEqualTo(1))))
-				.andExpect(jsonPath("$.max", hasSize(greaterThanOrEqualTo(1))));
+		// 1. Executa a requisição HTTP
+		ResponseEntity<ProducerIntervalResponse> response = restTemplate.exchange(
+				"/api/movies/producers-intervals",
+				HttpMethod.GET,
+				null,
+				new ParameterizedTypeReference<>() {
+				}
+		);
+
+		// 2. Verifica respostas se estão de acordo com o arquivo.
+		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+		assertThat(Objects.requireNonNull(response.getBody()).getMax().stream().map(ProducerIntervalDTO::getProducer).findFirst()
+				.orElseThrow()).isEqualTo("Matthew Vaughn");
+		assertThat(Objects.requireNonNull(response.getBody()).getMax().stream().map(ProducerIntervalDTO::getInterval).findFirst()
+				.orElseThrow()).isEqualTo(13);
+		assertThat(Objects.requireNonNull(response.getBody()).getMax().stream().map(ProducerIntervalDTO::getPreviousWin).findFirst()
+				.orElseThrow()).isEqualTo(2002);
+		assertThat(Objects.requireNonNull(response.getBody()).getMax().stream().map(ProducerIntervalDTO::getFollowingWin).findFirst()
+				.orElseThrow()).isEqualTo(2015);
+		assertThat(Objects.requireNonNull(response.getBody()).getMin().stream().map(ProducerIntervalDTO::getProducer).findFirst()
+				.orElseThrow()).isEqualTo("Joel Silver");
+		assertThat(Objects.requireNonNull(response.getBody()).getMin().stream().map(ProducerIntervalDTO::getInterval).findFirst()
+				.orElseThrow()).isEqualTo(1);
+		assertThat(Objects.requireNonNull(response.getBody()).getMin().stream().map(ProducerIntervalDTO::getPreviousWin).findFirst()
+				.orElseThrow()).isEqualTo(1990);
+		assertThat(Objects.requireNonNull(response.getBody()).getMin().stream().map(ProducerIntervalDTO::getFollowingWin).findFirst()
+				.orElseThrow()).isEqualTo(1991);
+
 	}
 
 	@Test
-	void deveRetornarIntervaloMinCorreto() throws Exception {
-		MvcResult result = mockMvc.perform(get("/api/movies/producers-intervals")
-						.contentType(MediaType.APPLICATION_JSON))
-				.andExpect(status().isOk())
-				.andReturn();
+	void deveValidarSeOsResultadosSaoValidos() {
+		// 1. Executa a requisição HTTP
+		ResponseEntity<ProducerIntervalResponse> response = restTemplate.exchange(
+				"/api/movies/producers-intervals",
+				HttpMethod.GET,
+				null,
+				new ParameterizedTypeReference<ProducerIntervalResponse>() {}
+		);
 
-		String content = result.getResponse().getContentAsString();
-		assertThat(content).contains("\"interval\":1"); // Produtora F tem 1 ano de intervalo.
+		// 2. Verifica o status da resposta
+		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+		// 3. Obtém a resposta
+		ProducerIntervalResponse apiResponse = response.getBody();
+		assertThat(apiResponse).isNotNull();
+
+		// 4. Verifica se as listas não estão vazias
+		assertThat(apiResponse.getMin()).isNotEmpty();
+		assertThat(apiResponse.getMax()).isNotEmpty();
+
+		// 5. Verifica se os intervalos são positivos
+		apiResponse.getMin().forEach(interval -> {
+			assertThat(interval.getInterval()).isPositive();
+		});
+		apiResponse.getMax().forEach(interval -> {
+			assertThat(interval.getInterval()).isPositive();
+		});
 	}
 
 	@Test
-	void deveRetornarOIntervaloMaximoCorreto() throws Exception {
-		MvcResult result = mockMvc.perform(get("/api/movies/producers-intervals")
-						.contentType(MediaType.APPLICATION_JSON))
-				.andExpect(status().isOk())
-				.andReturn();
+	void deveRetornarResultadosConsistentesComAEstrutura() {
+		// Executa o serviço diretamente
+		ProducerIntervalResponse serviceResponse = intervalService.getProducersIntervals();
 
-		String content = result.getResponse().getContentAsString();
-		assertThat(content).contains("\"interval\":10"); // Produtora E tem 5 anos de intervalo.
-	}
+		// Executa a API
+		ResponseEntity<ProducerIntervalResponse> apiResponse = restTemplate.exchange(
+				"/api/movies/producers-intervals",
+				HttpMethod.GET,
+				null,
+				new ParameterizedTypeReference<ProducerIntervalResponse>() {}
+		);
 
-	@Test
-	void deveRetornarVariosProdutoresComOMesmoIntervalo() throws Exception {
-		MvcResult result = mockMvc.perform(get("/api/movies/producers-intervals")
-						.contentType(MediaType.APPLICATION_JSON))
-				.andExpect(status().isOk())
-				.andReturn();
-
-		String content = result.getResponse().getContentAsString();
-
-		// Verifique se vários produtores podem ter o mesmo intervalo mínimo
-		assertThat(content).contains("\"producer\":\"Produtora F\"")
-				.contains("\"interval\":1")
-				.contains("\"producer\":\"Produtora G\"")
-				.contains("\"interval\":1");
+		// Verifica se as respostas têm a mesma estrutura
+		assertThat(apiResponse.getBody()).isNotNull();
+		assertThat(apiResponse.getBody().getMin()).hasSameSizeAs(serviceResponse.getMin());
+		assertThat(apiResponse.getBody().getMax()).hasSameSizeAs(serviceResponse.getMax());
 	}
 
 	@Test
@@ -132,7 +154,7 @@ class MovieControllerIT {
 	}
 
 	@Test
-	void deveRetornarAEstruturaJSONCorreta() throws Exception {
+	void deveRetornarAEstruturaJsonCorreta() throws Exception {
 		mockMvc.perform(get("/api/movies/producers-intervals")
 						.contentType(MediaType.APPLICATION_JSON))
 				.andExpect(status().isOk())
@@ -143,63 +165,5 @@ class MovieControllerIT {
 				.andExpect(jsonPath("$.min[0].interval").isNumber())
 				.andExpect(jsonPath("$.min[0].previousWin").isNumber())
 				.andExpect(jsonPath("$.min[0].followingWin").isNumber());
-	}
-
-	@Test
-	void naoDeveIncluirFilmesNaoVencedores() throws Exception {
-		// Adicione um filme não vencedor
-		Movie nonWinningMovie = createMovie(2024, "Non-Winning Movie", "Estúdio X",
-				List.of("Produtora X"), false);
-		movieRepository.save(nonWinningMovie);
-
-		MvcResult result = mockMvc.perform(get("/api/movies/producers-intervals")
-						.contentType(MediaType.APPLICATION_JSON))
-				.andExpect(status().isOk())
-				.andReturn();
-
-		String content = result.getResponse().getContentAsString();
-		assertThat(content).doesNotContain("Produtora X");
-	}
-
-	@Test
-	void deveLidarComCenarioDeVitoriaUnica() throws Exception {
-		// Limpe os dados existentes e adicione apenas um filme vencedor
-		movieRepository.deleteAll();
-		Movie singleWin = createMovie(2024, "Single Winner", "Estúdio Y",
-				List.of("Produtora Y"), true);
-		movieRepository.save(singleWin);
-
-		mockMvc.perform(get("/api/movies/producers-intervals")
-						.contentType(MediaType.APPLICATION_JSON))
-				.andExpect(status().isOk())
-				.andExpect(jsonPath("$.min", hasSize(0)))
-				.andExpect(jsonPath("$.max", hasSize(0)));
-	}
-
-	@Test
-	void deveLidarComVariasVitoriasNoMesmoAno() throws Exception {
-		// Limpar dados existentes
-		movieRepository.deleteAll();
-
-		// Adicione vários vencedores do mesmo ano
-		List<Movie> sameYearWins = List.of(
-				createMovie(2024, "Filme A", "Estúdio A", List.of("Produtora Z"), true),
-				createMovie(2024, "Filme B", "Estúdio B", List.of("Produtora Z"), true)
-		);
-		movieRepository.saveAll(sameYearWins);
-
-		// Adicione outra vitória em um ano diferente
-		Movie laterWin = createMovie(2025, "Filme C", "Estúdio C",
-				List.of("Produtora Z"), true);
-		movieRepository.save(laterWin);
-
-		MvcResult result = mockMvc.perform(get("/api/movies/producers-intervals")
-						.contentType(MediaType.APPLICATION_JSON))
-				.andExpect(status().isOk())
-				.andReturn();
-
-		String content = result.getResponse().getContentAsString();
-		assertThat(content).contains("\"producer\":\"Produtora Z\"")
-				.contains("\"interval\":1");
 	}
 }

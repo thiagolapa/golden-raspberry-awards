@@ -2,6 +2,8 @@ package br.com.outsera.golden_raspberry_awards.model;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.Fetch;
+import org.hibernate.annotations.FetchMode;
 
 import java.util.List;
 
@@ -24,6 +26,6 @@ public class Movie {
     private String studios;
     private Boolean winner;
 
-    @ElementCollection
+    @ElementCollection(fetch = FetchType.EAGER)
     private List<String> producers;
 }
